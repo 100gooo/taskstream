@@ -8,83 +8,86 @@ type Task = {
 }
 
 type State = {
-  tasks: Task[];
+  tasksList: Task[];
 }
 
 type Action =
-  | { type: 'SET_TASKS', tasks: Task[] }
-  | { type: 'ADD_TASK', task: Task }
-  | { type: 'UPDATE_TASK', task: Task }
-  | { type: 'DELETE_TASK', taskId: string }
+  | { type: 'LOAD_TASKS', tasks: Task[] }
+  | { type: 'CREATE_TASK', newTask: Task }
+  | { type: 'EDIT_TASK', updatedTask: Task }
+  | { type: 'REMOVE_TASK', taskId: string }
 
 const initialState: State = {
-  tasks: [],
+  tasksList: [],
 };
 
-const TaskContext = createContext<{ state: State; dispatch: React.Dispatch<Action> }>({ state: initialState, dispatch: () => null });
+const TasksContext = createContext<{ state: State; dispatch: React.Dispatch<Action> }>({ state: initialState, dispatch: () => null });
 
-const taskReducer = (state: State, action: Action): State => {
+const tasksReducer = (state: State, action: Action): State => {
   switch (action.type) {
-    case 'SET_TASKS':
-      return { ...state, tasks: action.tasks };
-    case 'ADD_TASK':
-      return { ...state, tasks: state.tasks.concat(action.task) };
-    case 'UPDATE_TASK':
-      return { ...state, tasks: state.tasks.map(task => task.id === action.task.id ? action.task : task) };
-    case 'DELETE_TASK':
-      return { ...state, tasks: state.tasks.filter(task => task.id !== action.taskId) };
+    case 'LOAD_TASKS':
+      return { ...state, tasksList: action.tasks };
+    case 'CREATE_TASK':
+      return { ...state, tasksList: state.tasksList.concat(action.newTask) };
+    case 'EDIT_TASK':
+      return {
+        ...state,
+        tasksList: state.tasksList.map(task => task.id === action.updatedTask.id ? action.updatedTask : task),
+      };
+    case 'REMOVE_TASK':
+      return { ...state, tasksList: state.tasksList.filter(task => task.id !== action.taskId) };
     default:
       return state;
   }
 };
 
-export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(taskReducer, initialState);
+export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [state, dispatch] = useReducer(tasksReducer, initialState);
 
-  const fetchTasks = async () => {
+  const retrieveTasks = async () => {
     try {
       const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/tasks`);
-      dispatch({ type: 'SET_TASKS', tasks: response.data });
+      dispatch({ type: 'LOAD_TASKS', tasks: response.data });
     } catch (error) {
-      console.error('Failed to fetch tasks:', error);
+      console.error('Failed to load tasks:', error);
     }
   };
 
   useEffect(() => {
-    fetchTasks();
+    retrieveTasks();
   }, []);
 
   return (
-    <TaskContext.Provider value={{ state, dispatch }}>
+    <TasksContext.Provider value={{ state, dispatch }}>
       {children}
-    </TaskContext.Provider>
+    </TasksContext.Provider>
   );
 };
 
-export const useTasks = () => useContext(TaskContext);
+export const useTasksState = () => useContext(TasksContext);
 
-export const updateTask = async (task: Task) => {
+export const modifyTask = async (task: Task) => {
   try {
     const response = await axios.put(`${process.env.REACT_APP_BACKEND_URL}/tasks/${task.id}`, task);
     return response.data;
   } catch (error) {
-    console.error('Failed to update task:', error);
+    console.error('Failed to modify task:', error);
   }
 };
 
-export const addTask = async (task: Task) => {
+export const createNewTask = async (task: Task) => {
   try {
     const response = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/tasks`, task);
     return response.data;
   } catch (error) {
-    console.error('Failed to add task:', error);
+    console.error('Failed to create task:', error);
   }
 };
 
-export const deleteTask = async (taskId: string) => {
+export const eraseTask = async (taskId: string) => {
   try {
     await axios.delete(`${process.env.REACT_APP_BACKEND_URL}/tasks/${taskId}`);
   } catch (error) {
-    console.error('Failed to delete task:', error);
+    console.error('Failed to erase task:', error);
   }
 };
