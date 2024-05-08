@@ -39,16 +39,34 @@ func connectToMongo() *mongo.Client {
 		log.Fatal(err)
 	}
 
+	// Ping the database
+	err = client.Ping(context.TODO(), nil)
+	if err != nil {
+		log.Fatal("Failed to connect to mongo:", err)
+	}
+
+	fmt.Println("Connected to MongoDB!")
 	return client
 }
 
 func CreateTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var task Task
-	_ = json.NewDecoder(r.Body).Decode(&task)
+
+	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	collection := client.Database("goTasks").Collection("tasks")
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	result, _ := collection.InsertOne(ctx, task)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := collection.InsertOne(ctx, task)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -56,17 +74,21 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var tasks []Task
 	collection := client.Database("goTasks").Collection("tasks")
-	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	cursor, err := collection.Find(ctx, bson.M{})
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"message":"` + err.Error() + `"}`))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer cursor.Close(ctx)
 	for cursor.Next(ctx) {
 		var task Task
-		cursor.Decode(&task)
+		if err := cursor.Decode(&task); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		tasks = append(tasks, task)
 	}
 	json.NewEncoder(w).Encode(tasks)
@@ -75,28 +97,54 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 func UpdateTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
+	id, err := primitive.ObjectIDFromHex(params["id"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	
 	var task Task
-	_ = json.NewDecoder(r.Body).Decode(&task)
+	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	
 	collection := client.Database("goTasks").Collection("tasks")
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	result, _ := collection.UpdateOne(
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	result, err := collection.UpdateOne(
 		ctx,
 		bson.M{"_id": id},
 		bson.D{
 			{"$set", bson.D{{"title", task.Title}, {"description", task.Description}, {"done", task.Done}}},
 		},
 	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(result)
 }
 
 func DeleteTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	id, _ := primitive.ObjectIDFromHex(params["id"])
+	id, err := primitive.ObjectIDFromHex(params["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
 	collection := client.Database("goTasks").Collection("tasks")
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	result, _ := collection.DeleteOne(ctx, bson.M{"_id": id})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	result, err := collection.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(result)
 }
 
