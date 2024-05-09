@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -25,27 +26,30 @@ type Task struct {
 }
 
 var client *mongo.Client
+var once sync.Once
 
 func connectToMongo() *mongo.Client {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-	mongoURI := os.Getenv("MONGO_URI")
+	once.Do(func() {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatal("Error loading .env file")
+		}
+		mongoURI := os.Getenv("MONGO_URI")
 
-	clientOptions := options.Client().ApplyURI(mongoURI)
-	client, err := mongo.Connect(context.TODO(), clientOptions)
-	if err != nil {
-		log.Fatal(err)
-	}
+		clientOptions := options.Client().ApplyURI(mongoURI)
+		var errConnect error
+		client, errConnect = mongo.Connect(context.TODO(), clientOptions)
+		if errConnect != nil {
+			log.Fatal(errConnect)
+		}
 
-	// Ping the database
-	err = client.Ping(context.TODO(), nil)
-	if err != nil {
-		log.Fatal("Failed to connect to mongo:", err)
-	}
+		errConnect = client.Ping(context.TODO(), nil)
+		if errConnect != nil {
+			log.Fatal("Failed to connect to mongo:", errConnect)
+		}
 
-	fmt.Println("Connected to MongoDB!")
+		fmt.Println("Connected to MongoDB!")
+	})
 	return client
 }
 
@@ -85,7 +89,7 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 	defer cursor.Close(ctx)
 	for cursor.Next(ctx) {
 		var task Task
-		if err := cursor.Decode(&task); err != nil {
+		if err = cursor.Decode(&task); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -102,17 +106,17 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	var task Task
-	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&task); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	
+
 	collection := client.Database("goTasks").Collection("tasks")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	result, err := collection.UpdateOne(
 		ctx,
 		bson.M{"_id": id},
@@ -139,7 +143,7 @@ func DeleteTask(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database("goTasks").Collection("tasks")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
