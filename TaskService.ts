@@ -1,21 +1,21 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import axios from 'axios';
 
 type Task = {
   id: string;
   description: string;
   completed: boolean;
-}
+};
 
 type State = {
   tasksList: Task[];
-}
+};
 
 type Action =
   | { type: 'LOAD_TASKS', tasks: Task[] }
   | { type: 'CREATE_TASK', newTask: Task }
   | { type: 'EDIT_TASK', updatedTask: Task }
-  | { type: 'REMOVE_TASK', taskId: string }
+  | { type: 'REMOVE_TASK', taskId: string };
 
 const initialState: State = {
   tasksList: [],
@@ -43,13 +43,19 @@ const tasksReducer = (state: State, action: Action): State => {
 
 export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(tasksReducer, initialState);
+  
+  // Adding a simple cache flag to prevent refetching tasks if they have already been loaded
+  const [isTasksLoaded, setIsTasksLoaded] = useState(false);
 
   const retrieveTasks = async () => {
-    try {
-      const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/tasks`);
-      dispatch({ type: 'LOAD_TASKS', tasks: response.data });
-    } catch (error) {
-      console.error('Failed to load tasks:', error);
+    if (!isTasksLoaded) { // Only fetch tasks if not already loaded
+      try {
+        const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/tasks`);
+        dispatch({ type: 'LOAD_TASKS', tasks: response.data });
+        setIsTasksLoaded(true); // Set flag to true after tasks are loaded
+      } catch (error) {
+        console.error('Failed to load tasks:', error);
+      }
     }
   };
 
