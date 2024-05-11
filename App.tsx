@@ -10,41 +10,41 @@ interface Task {
 const API_ENDPOINT = process.env.REACT_APP_API_ENDPOINT || 'http://localhost:3000';
 
 const TaskStream: React.FC = () => {
-  const [taskList, setTaskList] = useState<Task[]>([]);
-  const [isAddTaskModalVisible, setAddTaskModalVisibility] = useState<boolean>(false);
-  const [newTaskDetails, setNewTaskDetails] = useState<{ title: string; description: string }>({ title: '', description: '' });
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isTaskModalOpen, setTaskModalOpen] = useState<boolean>(false);
+  const [taskFormData, setTaskFormData] = useState<{ title: string; description: string }>({ title: '', description: '' });
 
   useEffect(() => {
     fetch(`${API_ENDPOINT}/tasks`)
       .then(response => response.json())
-      .then(data => setTaskList(data))
+      .then(tasksFromServer => setTasks(tasksFromServer))
       .catch(error => console.error('Failed to load tasks:', error));
   }, []);
 
-  const handleAddTaskSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleTaskCreation = (event: React.FormEvent) => {
+    event.preventDefault();
     fetch(`${API_ENDPOINT}/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTaskDetails),
+      body: JSON.stringify(taskFormData),
     })
     .then(response => response.json())
-    .then(addedTask => {
-      setTaskList(currentTasks => [...currentTasks, addedTask]);
-      setAddTaskModalVisibility(false);
-      setNewTaskDetails({ title: '', description: '' });
+    .then(newTask => {
+      setTasks(currentTasks => [...currentTasks, newTask]);
+      setTaskModalOpen(false);
+      setTaskFormData({ title: '', description: '' });
     })
     .catch(error => console.error('Failed to create task:', error));
   };
 
-  const changeTaskStatus = (taskId: string, newStatus: Task['status']) => {
+  const updateTaskStatus = (taskId: string, newStatus: Task['status']) => {
     fetch(`${API_ENDPOINT}/tasks/${taskId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     })
     .then(() => {
-      setTaskList(currentTasks =>
+      setTasks(currentTasks =>
         currentTasks.map(task => 
           task.id === taskId ? { ...task, status: newStatus } : task
         ));
@@ -54,29 +54,29 @@ const TaskStream: React.FC = () => {
 
   return (
     <div>
-      <button onClick={() => setAddTaskModalVisibility(true)}>Add Task</button>
-      {isAddTaskModalVisible && (
+      <button onClick={() => setTaskModalOpen(true)}>Add Task</button>
+      {isTaskModalOpen && (
         <div>
-          <form onSubmit={handleAddTaskSubmit}>
+          <form onSubmit={handleTaskCreation}>
             <label>
               Title:
-              <input type="text" value={newTaskDetails.title} onChange={(e) => setNewTaskDetails({ ...newTaskDetails, title: e.target.value })} required />
+              <input type="text" value={taskFormData.title} onChange={(e) => setTaskFormData({ ...taskFormData, title: e.target.value })} required />
             </label>
             <label>
               Description:
-              <textarea value={newTaskDetails.description} onChange={(e) => setNewTaskDetails({ ...newTaskDetails, description: e.target.value })} required />
+              <textarea value={taskFormData.description} onChange={(e) => setTaskFormData({ ...taskFormData, description: e.target.value })} required />
             </label>
             <button type="submit">Create Task</button>
-            <button onClick={() => setAddTaskModalVisibility(false)}>Cancel</button>
+            <button onClick={() => setTaskModalOpen(false)}>Cancel</button>
           </form>
         </div>
       )}
       <div>
-        {taskList.map(task => (
+        {tasks.map(task => (
           <div key={task.id}>
             <h3>{task.title}</h3>
             <p>{task.description}</p>
-            <button onClick={() => changeTaskStatus(task.id, 'done')}>Mark as Done</button>
+            <button onClick={() => updateTaskStatus(task.id, 'done')}>Mark as Done</button>
           </div>
         ))}
       </div>
