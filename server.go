@@ -81,7 +81,17 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cursor, err := collection.Find(ctx, bson.M{})
+	queryParams := r.URL.Query()
+	title := queryParams.Get("title")
+
+	var filter bson.M
+	if title != "" {
+		filter = bson.M{"title": bson.M{"$regex": primitive.Regex{Pattern: title, Options: "i"}}}
+	} else {
+		filter = bson.M{}
+	}
+
+	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
