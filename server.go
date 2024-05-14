@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"github.com/joho/godotenv"
 )
 
 type Task struct {
@@ -32,7 +32,7 @@ func connectToMongo() *mongo.Client {
 	once.Do(func() {
 		err := godotenv.Load()
 		if err != nil {
-			log.Fatal("Error loading .env file")
+			log.Fatal("Error loading .env file: ", err)
 		}
 		mongoURI := os.Getenv("MONGO_URI")
 
@@ -40,12 +40,12 @@ func connectToMongo() *mongo.Client {
 		var errConnect error
 		client, errConnect = mongo.Connect(context.TODO(), clientOptions)
 		if errConnect != nil {
-			log.Fatal(errConnect)
+			log.Fatal("Error connecting to MongoDB: ", errConnect)
 		}
 
-		errConnect = client.Ping(context.TODO(), nil)
-		if errConnect != nil {
-			log.Fatal("Failed to connect to mongo:", errConnect)
+		errPing := client.Ping(context.TODO(), nil)
+		if errPing != nil {
+			log.Fatal("Failed to connect to MongoDB: ", errPing)
 		}
 
 		fmt.Println("Connected to MongoDB!")
@@ -58,7 +58,8 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 	var task Task
 
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Error decoding task: %v", err)
+		http.Error(w, "Error decoding task", http.StatusBadRequest)
 		return
 	}
 
@@ -68,7 +69,8 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	result, err := collection.InsertOne(ctx, task)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error inserting task: %v", err)
+		http.Error(w, "Error inserting task", http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(result)
@@ -93,14 +95,16 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 
 	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error finding tasks: %v", err)
+		http.Error(w, "Error finding tasks", http.StatusInternalServerError)
 		return
 	}
 	defer cursor.Close(ctx)
 	for cursor.Next(ctx) {
 		var task Task
 		if err = cursor.Decode(&task); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("Error decoding task: %v", err)
+			http.Error(w, "Error decoding task", http.StatusInternalServerError)
 			return
 		}
 		tasks = append(tasks, task)
@@ -113,13 +117,15 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, err := primitive.ObjectIDFromHex(params["id"])
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Invalid task ID: %v", err)
+		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
 
 	var task Task
 	if err = json.NewDecoder(r.Body).Decode(&task); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Error decoding task: %v", err)
+		http.Error(w, "Error decoding task", http.StatusBadRequest)
 		return
 	}
 
@@ -135,7 +141,8 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error updating task: %v", err)
+		http.Error(w, "Error updating task", http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(result)
@@ -146,7 +153,8 @@ func DeleteTask(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id, err := primitive.ObjectIDFromHex(params["id"])
 	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		log.Printf("Invalid task ID: %v", err)
+		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
 
@@ -156,7 +164,8 @@ func DeleteTask(w http.ResponseWriter, r *http.Request) {
 
 	result, err := collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error deleting task: %v", err)
+		http.Error(w, "Error deleting task", http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(result)
