@@ -15,71 +15,91 @@ const TaskStream: React.FC = () => {
   const [taskFormData, setTaskFormData] = useState<{ title: string; description: string }>({ title: '', description: '' });
 
   useEffect(() => {
-    fetch(`${API_ENDPOINT}/tasks`)
-      .then(response => response.json())
-      .then(tasksFromServer => setTasks(tasksFromServer))
-      .catch(error => console.error('Failed to load tasks:', error));
+    loadTasks();
   }, []);
 
-  const handleTaskCreation = (event: React.FormEvent) => {
-    event.preventDefault();
-    fetch(`${API_ENDPOINT}/tasks`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(taskFormData),
-    })
-    .then(response => response.json())
-    .then(newTask => {
-      setTasks(currentTasks => [...currentTasks, newTask]);
-      setTaskModalOpen(false);
-      setTaskFormData({ title: '', description: '' });
-    })
-    .catch(error => console.error('Failed to create task:', error));
+  const loadTasks = async () => {
+    try {
+      const response = await fetch(`${API_ENDPOINT}/tasks`);
+      const tasksFromServer = await response.json();
+      setTasks(tasksFromServer);
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+    }
   };
 
-  const updateTaskStatus = (taskId: string, newStatus: Task['status']) => {
-    fetch(`${API_ENDPOINT}/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    })
-    .then(() => {
+  const handleTaskCreation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const response = await fetch(`${API_ENDPOINT}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskFormData),
+      });
+      const newTask = await response.json();
+      setTasks(currentTasks => [...currentTasks, newTask]);
+      closeAndClearModal();
+    } catch (error) {
+      console.error('Failed to create task:', error);
+    }
+  };
+
+  const closeAndClearModal = () => {
+    setTaskModalOpen(false);
+    setTaskFormData({ title: '', description: '' });
+  };
+
+  const updateTaskStatus = async (taskId: string, newStatus: Task['status']) => {
+    try {
+      await fetch(`${API_ENDPOINT}/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
       setTasks(currentTasks =>
         currentTasks.map(task => 
           task.id === taskId ? { ...task, status: newStatus } : task
         ));
-    })
-    .catch(error => console.error('Failed to update task status:', error));
+    } catch (error) {
+      console.error('Failed to update task status:', error);
+    }
   };
+
+  const handleTaskFormDataChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setTaskFormData(prevFormData => ({ ...prevFormData, [name]: value }));
+  };
+
+  const taskForm = () => (
+    <div>
+      <form onSubmit={handleTaskCreation}>
+        <label>
+          Title:
+          <input name="title" type="text" value={taskFormData.title} onChange={handleTaskFormDataChange} required />
+        </label>
+        <label>
+          Description:
+          <textarea name="description" value={taskFormData.description} onChange={handleTaskFormDataChange} required />
+        </label>
+        <button type="submit">Create Task</button>
+        <button type="button" onClick={() => setTaskModalOpen(false)}>Cancel</button>
+      </form>
+    </div>
+  );
+
+  const renderTasks = () => tasks.map(task => (
+    <div key={task.id}>
+      <h3>{task.title}</h3>
+      <p>{task.description}</p>
+      <button onClick={() => updateTaskStatus(task.id, 'done')}>Mark as Done</button>
+    </div>
+  ));
 
   return (
     <div>
       <button onClick={() => setTaskModalOpen(true)}>Add Task</button>
-      {isTaskModalOpen && (
-        <div>
-          <form onSubmit={handleTaskCreation}>
-            <label>
-              Title:
-              <input type="text" value={taskFormData.title} onChange={(e) => setTaskFormData({ ...taskFormData, title: e.target.value })} required />
-            </label>
-            <label>
-              Description:
-              <textarea value={taskFormData.description} onChange={(e) => setTaskFormData({ ...taskFormData, description: e.target.value })} required />
-            </label>
-            <button type="submit">Create Task</button>
-            <button onClick={() => setTaskModalOpen(false)}>Cancel</button>
-          </form>
-        </div>
-      )}
-      <div>
-        {tasks.map(task => (
-          <div key={task.id}>
-            <h3>{task.title}</h3>
-            <p>{task.description}</p>
-            <button onClick={() => updateTaskStatus(task.id, 'done')}>Mark as Done</button>
-          </div>
-        ))}
-      </div>
+      {isTaskModalOpen && taskForm()}
+      <div>{renderTasks()}</div>
     </div>
   );
 };
