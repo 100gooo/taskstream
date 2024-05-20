@@ -20,48 +20,48 @@ func init() {
 	}
 }
 
-var jwtKey = []byte(os.Getenv("JWT_SECRET"))
+var jwtSecretKey = []byte(os.Getenv("JWT_SECRET"))
 
-type Credentials struct {
+type UserCredentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-type Claims struct {
+type UserClaims struct {
 	Username string `json:"username"`
 	jwt.StandardClaims
 }
 
-var users = map[string]string{
+var registeredUsers = map[string]string{
 	"user1": "$2a$14$N0NfIHljLED/fT8b.O2FVuIx.JoJWp9TmlH1heUOBsIf6pC13X.a6",
 }
 
 func main() {
-	http.HandleFunc("/signin", Signin)
-	http.HandleFunc("/welcome", Welcome)
-	http.HandleFunc("/refresh", Refresh)
+	http.HandleFunc("/signin", SignInHandler)
+	http.HandleFunc("/welcome", WelcomeHandler)
+	http.HandleFunc("/refresh", RefreshTokenHandler)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func Signin(w http.ResponseWriter, r *http.Request) {
-	var creds Credentials
-	err := json.NewDecoder(r.Body).Decode(&creds)
+func SignInHandler(w http.ResponseWriter, r *http.Request) {
+	var credentials UserCredentials
+	err := json.NewDecoder(r.Body).Decode(&credentials)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	expectedPassword, ok := users[creds.Username]
+	expectedPasswordHash, ok := registeredUsers[credentials.Username]
 
-	if !ok || !CheckPasswordHash(creds.Password, expectedPassword) {
+	if !ok || !ValidatePasswordHash(credentials.Password, expectedPasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	expirationTime := time.Now().Add(5 * time.Minute)
-	claims := &Claims{
-		Username: creds.Username,
+	claims := &UserClaims{
+		Username: credentials.Username,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
 		},
@@ -69,7 +69,7 @@ func Signin(w http.ResponseWriter, r *http.Request) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	tokenString, err := token.SignedString(jwtKey)
+	tokenString, err := token.SignedString(jwtSecretKey)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -82,13 +82,13 @@ func Signin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func Welcome(w http.ResponseWriter, r *http.Request) {
-	tokenString := ExtractToken(r)
+func WelcomeHandler(w http.ResponseWriter, r *http.Request) {
+	tokenString := ExtractBearerToken(r)
 
-	claims := &Claims{}
+	claims := &UserClaims{}
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
+		return jwtSecretKey, nil
 	})
 
 	if err != nil || !token.Valid {
@@ -99,13 +99,13 @@ func Welcome(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf("Welcome %s!", claims.Username)))
 }
 
-func Refresh(w http.ResponseWriter, r *http.Request) {
-	tokenString := ExtractToken(r)
+func RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	tokenString := ExtractBearerToken(r)
 
-	claims := &Claims{}
+	claims := &UserClaims{}
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
+		return jwtSecretKey, nil
 	})
 
 	if err != nil {
@@ -125,7 +125,7 @@ func Refresh(w http.ResponseWriter, r *http.Request) {
 	expirationTime := time.Now().Add(5 * time.Minute)
 	claims.ExpiresAt = expirationTime.Unix()
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err = newToken.SignedString(jwtKey)
+	tokenString, err = newToken.SignedString(jwtSecretKey)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -138,16 +138,16 @@ func Refresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func CheckPasswordHash(password, hash string) bool {
+func ValidatePasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
-func ExtractToken(r *http.Request) string {
-	bearToken := r.Header.Get("Authorization")
-	strArr := strings.Split(bearToken, " ")
-	if len(strArr) == 2 {
-		return strArr[1]
+func ExtractBearerToken(r *http.Request) string {
+	bearerToken := r.Header.Get("Authorization")
+	tokenParts := strings.Split(bearerToken, " ")
+	if len(tokenParts) == 2 {
+		return tokenParts[1]
 	}
 	return ""
 }
