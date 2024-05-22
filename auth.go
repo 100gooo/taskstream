@@ -20,48 +20,48 @@ func init() {
 	}
 }
 
-var jwtSecretKey = []byte(os.Getenv("JWT_SECRET"))
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-type UserCredentials struct {
+type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-type UserClaims struct {
+type Claims struct {
 	Username string `json:"username"`
 	jwt.StandardClaims
 }
 
-var registeredUsers = map[string]string{
+var demoUsers = map[string]string{
 	"user1": "$2a$14$N0NfIHljLED/fT8b.O2FVuIx.JoJWp9TmlH1heUOBsIf6pC13X.a6",
 }
 
 func main() {
-	http.HandleFunc("/signin", SignInHandler)
-	http.HandleFunc("/welcome", WelcomeHandler)
-	http.HandleFunc("/refresh", RefreshTokenHandler)
+	http.HandleFunc("/signin", signIn)
+	http.HandleFunc("/welcome", welcome)
+	http.HandleFunc("/refresh", refreshToken)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func SignInHandler(w http.ResponseWriter, r *http.Request) {
-	var credentials UserCredentials
-	err := json.NewDecoder(r.Body).Decode(&credentials)
+func signIn(w http.ResponseWriter, r *http.Request) {
+	var userCredentials Credentials
+	err := json.NewDecoder(r.Body).Decode(&userCredentials)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	expectedPasswordHash, ok := registeredUsers[credentials.Username]
+	storedPasswordHash, ok := demoUsers[userCredentials.Username]
 
-	if !ok || !ValidatePasswordHash(credentials.Password, expectedPasswordHash) {
+	if !ok || !verifyPassword(userCredentials.Password, storedPasswordHash) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
 	expirationTime := time.Now().Add(5 * time.Minute)
-	claims := &UserClaims{
-		Username: credentials.Username,
+	claims := &Claims{
+		Username: userCredentials.Username,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
 		},
@@ -69,7 +69,7 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	tokenString, err := token.SignedString(jwtSecretKey)
+	tokenString, err := token.SignedString(jwtSecret)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -82,13 +82,13 @@ func SignInHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func WelcomeHandler(w http.ResponseWriter, r *http.Request) {
-	tokenString := ExtractBearerToken(r)
+func welcome(w http.ResponseWriter, r *http.Request) {
+	tokenString := extractToken(r)
 
-	claims := &UserClaims{}
+	userClaims := &Claims{}
 
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecretKey, nil
+	token, err := jwt.ParseWithClaims(tokenString, userClaims, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
 	})
 
 	if err != nil || !token.Valid {
@@ -96,16 +96,16 @@ func WelcomeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write([]byte(fmt.Sprintf("Welcome %s!", claims.Username)))
+	w.Write([]byte(fmt.Sprintf("Welcome %s!", userClaims.Username)))
 }
 
-func RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
-	tokenString := ExtractBearerToken(r)
+func refreshToken(w http.ResponseWriter, r *http.Request) {
+	tokenString := extractToken(r)
 
-	claims := &UserClaims{}
+	userClaims := &Claims{}
 
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecretKey, nil
+	token, err := jwt.ParseWithClaims(tokenString, userClaims, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
 	})
 
 	if err != nil {
@@ -117,15 +117,15 @@ func RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if time.Unix(claims.ExpiresAt, 0).Sub(time.Now()) > 30*time.Second {
+	if time.Unix(userClaims.ExpiresAt, 0).Sub(time.Now()) > 30*time.Second {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	expirationTime := time.Now().Add(5 * time.Minute)
-	claims.ExpiresAt = expirationTime.Unix()
-	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err = newToken.SignedString(jwtSecretKey)
+	userClaims.ExpiresAt = expirationTime.Unix()
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, userClaims)
+	tokenString, err = newToken.SignedString(jwtSecret)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -138,14 +138,14 @@ func RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func ValidatePasswordHash(password, hash string) bool {
+func verifyPassword(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
-func ExtractBearerToken(r *http.Request) string {
-	bearerToken := r.Header.Get("Authorization")
-	tokenParts := strings.Split(bearerToken, " ")
+func extractToken(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	tokenParts := strings.Split(authHeader, " ")
 	if len(tokenParts) == 2 {
 		return tokenParts[1]
 	}
